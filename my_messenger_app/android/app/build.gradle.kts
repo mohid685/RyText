@@ -22,7 +22,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.my_messenger_app"
-        minSdk = flutter.minSdkVersion
+        minSdk = 23  // Updated to support Firebase Auth
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

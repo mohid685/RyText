@@ -1,8 +1,16 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:math';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  
+  // Verify Firebase
+  debugPrint('Firebase initialized: ${Firebase.app().options.projectId}');
+  
   runApp(MyMessengerApp());
 }
 
@@ -39,6 +47,10 @@ final List<UserProfile> demoUsers = [
 class MyMessengerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    SystemChrome.setPreferredOrientations([ // Lock portrait mode
+      DeviceOrientation.portraitUp,
+    ]);
+    
     return MaterialApp(
       title: 'RyText',
       debugShowCheckedModeBanner: false,
@@ -517,64 +529,64 @@ class _InAppNotificationState extends State<_InAppNotification> {
               children: [
                 _showReply
                     ? Row(
-                        children: [
-                          Icon(Icons.mail, color: Color(0xFF7C3AED), size: 32),
-                          SizedBox(width: 10),
-                          Expanded(
-                            child: TextField(
-                              controller: _replyController,
-                              style: TextStyle(color: Colors.white),
-                              decoration: InputDecoration(
-                                hintText: 'Reply to ${widget.fromUser.name}...',
-                                hintStyle: TextStyle(color: Colors.white54),
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                  borderSide: BorderSide.none,
-                                ),
-                                filled: true,
-                                fillColor: Color(0xFF181829),
-                              ),
-                              enabled: !_sending,
-                              onSubmitted: (_) => _handleReply(),
-                              autofocus: true,
-                            ),
+                  children: [
+                    Icon(Icons.mail, color: Color(0xFF7C3AED), size: 32),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _replyController,
+                        style: TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'Reply to ${widget.fromUser.name}...',
+                          hintStyle: TextStyle(color: Colors.white54),
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
                           ),
-                          SizedBox(width: 8),
-                          _sending
-                              ? SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF7C3AED)),
-                                )
-                              : IconButton(
-                                  icon: Icon(Icons.send, color: Color(0xFF7C3AED)),
-                                  onPressed: _handleReply,
-                                ),
-                        ],
-                      )
+                          filled: true,
+                          fillColor: Color(0xFF181829),
+                        ),
+                        enabled: !_sending,
+                        onSubmitted: (_) => _handleReply(),
+                        autofocus: true,
+                      ),
+                    ),
+                    SizedBox(width: 8),
+                    _sending
+                        ? SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF7C3AED)),
+                    )
+                        : IconButton(
+                      icon: Icon(Icons.send, color: Color(0xFF7C3AED)),
+                      onPressed: _handleReply,
+                    ),
+                  ],
+                )
                     : Row(
+                  children: [
+                    Icon(Icons.mail, color: Color(0xFF7C3AED), size: 32),
+                    SizedBox(width: 12),
+                    CircleAvatar(
+                      backgroundColor: Color(0xFF7C3AED),
+                      child: Text(widget.fromUser.avatar, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.mail, color: Color(0xFF7C3AED), size: 32),
-                          SizedBox(width: 12),
-                          CircleAvatar(
-                            backgroundColor: Color(0xFF7C3AED),
-                            child: Text(widget.fromUser.avatar, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                          ),
-                          SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(widget.fromUser.name, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                SizedBox(height: 2),
-                                Text(widget.message, style: TextStyle(color: Colors.white70), maxLines: 1, overflow: TextOverflow.ellipsis),
-                              ],
-                            ),
-                          ),
+                          Text(widget.fromUser.name, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          SizedBox(height: 2),
+                          Text(widget.message, style: TextStyle(color: Colors.white70), maxLines: 1, overflow: TextOverflow.ellipsis),
                         ],
                       ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -655,7 +667,7 @@ class _ChatScreenState extends State<ChatScreen> {
         alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
         child: Row(
           mainAxisAlignment:
-              isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+          isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             if (!isMe)
@@ -873,11 +885,11 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           floatingActionButton: widget.chat.user.name == 'Alice'
               ? FloatingActionButton.extended(
-                  backgroundColor: Color(0xFF7C3AED),
-                  icon: Icon(Icons.mail, color: Colors.white),
-                  label: Text('Simulate Bob', style: TextStyle(color: Colors.white)),
-                  onPressed: _simulateOtherUserMessage,
-                )
+            backgroundColor: Color(0xFF7C3AED),
+            icon: Icon(Icons.mail, color: Colors.white),
+            label: Text('Simulate Bob', style: TextStyle(color: Colors.white)),
+            onPressed: _simulateOtherUserMessage,
+          )
               : null,
         ),
       ],
@@ -955,4 +967,3 @@ class _AddContactDialogState extends State<_AddContactDialog> {
     );
   }
 }
-
