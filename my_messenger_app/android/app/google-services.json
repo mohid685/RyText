@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "747106508037",
+    "project_id": "rytext-f030d",
+    "storage_bucket": "rytext-f030d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:747106508037:android:153573fbc28854c05a2b6c",
+        "android_client_info": {
+          "package_name": "com.example.my_messenger_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA-pO50MJfpQ8gycnpGZwyOxO0q_ImIOkw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
