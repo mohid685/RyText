@@ -15,7 +15,7 @@ void main() async {
   );
   
   // Verify Firebase
-  debugPrint('Firebase initialized: ${Firebase.app().options.projectId}');
+  debugPrint('Firebase initialized: [32m${Firebase.app().options.projectId}[0m');
   
   // Test Firebase Service
   debugPrint('✅ Firebase Service: Demo user ID: ${FirebaseService.currentUserId}');
@@ -32,10 +32,11 @@ class UserProfile {
 
 class Message {
   final String text;
-  final String sender;
+  final String senderId;
+  final String senderAvatar;
   final DateTime timestamp;
 
-  Message({required this.text, required this.sender, required this.timestamp});
+  Message({required this.text, required this.senderId, required this.senderAvatar, required this.timestamp});
 }
 
 class Chat {
@@ -59,42 +60,67 @@ class MyMessengerApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: Colors.transparent,
-        primaryColor: Color(0xFF7C3AED),
+        scaffoldBackgroundColor: Colors.black,
+        primaryColor: Color(0xFF39FF14),
         colorScheme: ColorScheme.dark(
-          primary: Color(0xFF7C3AED),
-          secondary: Color(0xFF9F7AEA),
-          background: Color(0xFF181829),
+          primary: Color(0xFF39FF14),
+          secondary: Color(0xFF00C800),
+          background: Colors.black,
         ),
         appBarTheme: AppBarTheme(
-          backgroundColor: Colors.transparent,
+          backgroundColor: Colors.black,
           elevation: 0,
           centerTitle: true,
           titleTextStyle: TextStyle(
-            color: Colors.white,
+            color: Color(0xFF39FF14),
             fontWeight: FontWeight.bold,
             fontSize: 24,
             letterSpacing: 1.2,
-            shadows: [Shadow(color: Color(0xFF7C3AED).withOpacity(0.2), blurRadius: 8)],
+            shadows: [
+              Shadow(color: Color(0xFF39FF14).withOpacity(0.7), blurRadius: 16, offset: Offset(0, 0)),
+            ],
           ),
+          iconTheme: IconThemeData(color: Color(0xFF39FF14)),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: Color(0xFF23234A).withOpacity(0.7),
+          fillColor: Colors.black,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(30),
-            borderSide: BorderSide.none,
+            borderSide: BorderSide(color: Color(0xFF39FF14), width: 2),
           ),
-          hintStyle: TextStyle(color: Colors.white54),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(30),
+            borderSide: BorderSide(color: Color(0xFF39FF14), width: 2),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(30),
+            borderSide: BorderSide(color: Color(0xFF39FF14), width: 3),
+          ),
+          hintStyle: TextStyle(color: Color(0xFF39FF14).withOpacity(0.7)),
+          labelStyle: TextStyle(color: Color(0xFF39FF14)),
         ),
         floatingActionButtonTheme: FloatingActionButtonThemeData(
-          backgroundColor: Color(0xFF7C3AED),
-          elevation: 12,
+          backgroundColor: Color(0xFF39FF14),
+          elevation: 18,
+          foregroundColor: Colors.black,
+          shape: CircleBorder(),
         ),
         cardTheme: CardThemeData(
-          color: Colors.white.withOpacity(0.08),
-          elevation: 8,
+          color: Colors.black.withOpacity(0.85),
+          elevation: 12,
+          shadowColor: Color(0xFF39FF14).withOpacity(0.4),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        ),
+        textTheme: TextTheme(
+          bodyLarge: TextStyle(color: Color(0xFF39FF14)),
+          bodyMedium: TextStyle(color: Colors.white),
+          bodySmall: TextStyle(color: Color(0xFF39FF14).withOpacity(0.7)),
+          titleLarge: TextStyle(color: Color(0xFF39FF14), fontWeight: FontWeight.bold),
+        ),
+        iconTheme: IconThemeData(color: Color(0xFF39FF14)),
+        drawerTheme: DrawerThemeData(
+          backgroundColor: Colors.black.withOpacity(0.98),
         ),
       ),
       home: AuthGate(),
@@ -147,7 +173,22 @@ class _AuthScreenState extends State<AuthScreen> {
         await FirebaseService.signIn(_email, _password);
       } else {
         final phone = _selectedCountryCode + _phone;
+        if (_phone.isEmpty) {
+          setState(() { _error = 'Phone number is required.'; });
+          return;
+        }
         await FirebaseService.signUpWithPhone(_email, _password, _name, _avatar.isNotEmpty ? _avatar : _name[0].toUpperCase(), phone);
+        // Also save phone in Firestore user profile
+        final user = FirebaseService.auth.currentUser;
+        if (user != null) {
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+            'name': _name,
+            'avatar': _avatar.isNotEmpty ? _avatar : _name[0].toUpperCase(),
+            'email': _email,
+            'phone': phone,
+            'createdAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        }
       }
     } catch (e) {
       setState(() { _error = e.toString(); });
@@ -164,7 +205,7 @@ class _AuthScreenState extends State<AuthScreen> {
         child: SingleChildScrollView(
           padding: EdgeInsets.all(24),
           child: Card(
-            color: Color(0xFF23234A),
+            color: Color(0xFF101A10),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
             elevation: 8,
             child: Padding(
@@ -174,7 +215,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(_isLogin ? 'Sign In' : 'Register', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF7C3AED))),
+                    Text(_isLogin ? 'Sign In' : 'Register', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF39FF14))),
                     SizedBox(height: 24),
                     if (!_isLogin) ...[
                       TextFormField(
@@ -197,7 +238,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         children: [
                           DropdownButton<String>(
                             value: _selectedCountryCode,
-                            dropdownColor: Color(0xFF23234A),
+                            dropdownColor: Color(0xFF101A10),
                             style: TextStyle(color: Colors.white),
                             items: _countryCodes.map((code) => DropdownMenuItem(
                               value: code,
@@ -243,15 +284,16 @@ class _AuthScreenState extends State<AuthScreen> {
                       SizedBox(height: 12),
                     ],
                     _loading
-                        ? CircularProgressIndicator(color: Color(0xFF7C3AED))
+                        ? CircularProgressIndicator(color: Color(0xFF39FF14))
                         : ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Color(0xFF7C3AED),
+                              backgroundColor: Color(0xFF39FF14),
+                              foregroundColor: Colors.black,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               padding: EdgeInsets.symmetric(horizontal: 32, vertical: 14),
                             ),
                             onPressed: _submit,
-                            child: Text(_isLogin ? 'Sign In' : 'Register'),
+                            child: Text(_isLogin ? 'Sign In' : 'Register', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                           ),
                     SizedBox(height: 16),
                     TextButton(
@@ -368,10 +410,11 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                       style: TextStyle(
                         fontSize: 44,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF7C3AED),
+                        color: Color(0xFF39FF14),
                         letterSpacing: 2,
                         shadows: [
-                          Shadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 2)),
+                          Shadow(color: Color(0xFF39FF14).withOpacity(0.8), blurRadius: 24, offset: Offset(0, 0)),
+                          Shadow(color: Colors.black, blurRadius: 8, offset: Offset(0, 2)),
                         ],
                       ),
                     ),
@@ -388,8 +431,8 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                         switchInCurve: Curves.easeInOut,
                         switchOutCurve: Curves.easeInOut,
                         child: _envelopeClosed
-                            ? Icon(Icons.mail, key: ValueKey('closed'), size: 64, color: Colors.white)
-                            : Icon(Icons.mail_outline, key: ValueKey('open'), size: 64, color: Colors.white),
+                            ? Icon(Icons.mail, key: ValueKey('closed'), size: 64, color: Color(0xFF39FF14))
+                            : Icon(Icons.mail_outline, key: ValueKey('open'), size: 64, color: Color(0xFF39FF14)),
                       ),
                     );
                   },
@@ -415,6 +458,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Map<String, UserProfile> userProfiles = {};
   StreamSubscription<QuerySnapshot>? _contactsSubscription;
   String _search = '';
+  late UserProfile _currentUserProfile;
 
   @override
   void initState() {
@@ -423,6 +467,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     contactIds = [];
     _initializeUserProfile();
     _listenToContacts();
+    _upgradeUnregisteredContacts();
   }
 
   Future<void> _initializeUserProfile() async {
@@ -433,6 +478,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
         user.displayName ?? user.email?.split('@').first ?? 'User',
         '',
         user.email,
+      );
+      _currentUserProfile = UserProfile(
+        name: user.displayName ?? user.email?.split('@').first ?? 'User',
+        avatar: (user.displayName != null && user.displayName!.isNotEmpty)
+            ? user.displayName![0].toUpperCase()
+            : (user.email?.substring(0, 1).toUpperCase() ?? 'U'),
       );
     }
     _listenToChats();
@@ -498,7 +549,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ...chat.messages,
         Message(
           text: replyText,
-          sender: FirebaseService.currentUserName ?? 'Me',
+          senderId: FirebaseService.currentUserId ?? '',
+          senderAvatar: _currentUserProfile.avatar,
           timestamp: DateTime.now(),
         ),
       ]);
@@ -533,6 +585,66 @@ class _ChatListScreenState extends State<ChatListScreen> {
     });
   }
 
+  Future<void> _upgradeUnregisteredContacts() async {
+    final userId = FirebaseService.currentUserId;
+    if (userId == null) return;
+    final contactsSnap = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .collection('contacts')
+        .get();
+
+    for (var doc in contactsSnap.docs) {
+      final data = doc.data();
+      if (data['registered'] == false && data['phone'] != null) {
+        // Check if this phone is now registered
+        final usersSnap = await FirebaseFirestore.instance
+            .collection('users')
+            .where('phone', isEqualTo: data['phone'])
+            .get();
+        if (usersSnap.docs.isNotEmpty) {
+          final otherUserDoc = usersSnap.docs.first;
+          final otherUserId = otherUserDoc.id;
+          if (otherUserId == userId) continue; // Don't add yourself
+
+          // Create chat if not exists
+          final chatsSnap = await FirebaseFirestore.instance
+              .collection('chats')
+              .where('participants', arrayContains: userId)
+              .get();
+          String? chatId;
+          for (var chatDoc in chatsSnap.docs) {
+            final participants = List<String>.from(chatDoc['participants'] ?? []);
+            if (participants.contains(otherUserId)) {
+              chatId = chatDoc.id;
+              break;
+            }
+          }
+          if (chatId == null) {
+            final chatDoc = await FirebaseFirestore.instance.collection('chats').add({
+              'participants': [userId, otherUserId],
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+            chatId = chatDoc.id;
+          }
+
+          // Update contact to registered
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
+              .collection('contacts')
+              .doc(doc.id)
+              .update({
+            'name': otherUserDoc['name'] ?? '',
+            'avatar': otherUserDoc['avatar'] ?? '',
+            'registered': true,
+            'chatId': chatId,
+          });
+        }
+      }
+    }
+  }
+
   @override
   void dispose() {
     _chatsSubscription?.cancel();
@@ -553,41 +665,52 @@ class _ChatListScreenState extends State<ChatListScreen> {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF23234A), Color(0xFF7C3AED).withOpacity(0.7), Color(0xFF181829)],
+              colors: [
+                Colors.black,
+                Color(0xFF39FF14).withOpacity(0.15),
+                Colors.black,
+              ],
             ),
+            boxShadow: [
+              BoxShadow(
+                color: Color(0xFF39FF14).withOpacity(0.12),
+                blurRadius: 32,
+                spreadRadius: 8,
+              ),
+            ],
           ),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
             child: Container(color: Colors.transparent),
           ),
         ),
         Scaffold(
           backgroundColor: Colors.transparent,
           drawer: Drawer(
-            backgroundColor: Color(0xFF23234A).withOpacity(0.95),
+            backgroundColor: Colors.black.withOpacity(0.98),
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
                 DrawerHeader(
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [Color(0xFF7C3AED), Color(0xFF23234A)]),
+                    gradient: LinearGradient(colors: [Color(0xFF39FF14).withOpacity(0.7), Colors.black]),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       CircleAvatar(
                         radius: 32,
-                        backgroundColor: Color(0xFF7C3AED),
-                        child: Icon(Icons.person, color: Colors.white, size: 36),
+                        backgroundColor: Color(0xFF39FF14),
+                        child: Icon(Icons.person, color: Colors.black, size: 36),
                       ),
                       SizedBox(height: 12),
-                      Text('Profile & Settings', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                      Text('Profile & Settings', style: TextStyle(color: Color(0xFF39FF14), fontWeight: FontWeight.bold, fontSize: 18, shadows: [Shadow(color: Color(0xFF39FF14), blurRadius: 12)])),
                     ],
                   ),
                 ),
                 ListTile(
-                  leading: Icon(Icons.logout, color: Color(0xFF7C3AED)),
-                  title: Text('Logout', style: TextStyle(color: Colors.white)),
+                  leading: Icon(Icons.logout, color: Color(0xFF39FF14)),
+                  title: Text('Logout', style: TextStyle(color: Color(0xFF39FF14))),
                   onTap: () async {
                     await FirebaseService.signOut();
                     Navigator.of(context).pop();
@@ -600,7 +723,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             title: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.message, color: Color(0xFF7C3AED)),
+                Icon(Icons.message, color: Color(0xFF39FF14)),
                 SizedBox(width: 8),
                 Text('RyText'),
               ],
@@ -609,7 +732,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             elevation: 0,
             actions: [
               IconButton(
-                icon: Icon(Icons.bug_report, color: Color(0xFF7C3AED)),
+                icon: Icon(Icons.bug_report, color: Color(0xFF39FF14)),
                 onPressed: () async {
                   // Test Firebase Service
                   try {
@@ -638,9 +761,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 child: TextField(
                   decoration: InputDecoration(
                     hintText: 'Search contacts...',
-                    prefixIcon: Icon(Icons.search, color: Color(0xFF7C3AED)),
+                    prefixIcon: Icon(Icons.search, color: Color(0xFF39FF14)),
                   ),
-                  style: TextStyle(color: Colors.white),
+                  style: TextStyle(color: Color(0xFF39FF14)),
+                  cursorColor: Color(0xFF39FF14),
                   onChanged: (v) => setState(() => _search = v),
                 ),
               ),
@@ -691,8 +815,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
                             ),
                           ),
                           child: Card(
-                            color: Colors.white.withOpacity(0.10),
-                            elevation: 10,
+                            color: Colors.black.withOpacity(0.92),
+                            elevation: 16,
+                            shadowColor: Color(0xFF39FF14).withOpacity(0.3),
                             margin: EdgeInsets.symmetric(horizontal: 16),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
                             child: ListTile(
@@ -700,8 +825,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                 children: [
                                   CircleAvatar(
                                     radius: 28,
-                                    backgroundColor: Color(0xFF7C3AED),
-                                    child: Text(chat.user.avatar, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 22)),
+                                    backgroundColor: Color(0xFF39FF14),
+                                    child: Text(chat.user.avatar, style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 22, shadows: [Shadow(color: Color(0xFF39FF14), blurRadius: 8)])),
                                   ),
                                   if (status == 'Online')
                                     Positioned(
@@ -711,19 +836,20 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                         width: 12,
                                         height: 12,
                                         decoration: BoxDecoration(
-                                          color: Colors.greenAccent,
+                                          color: Color(0xFF39FF14),
                                           shape: BoxShape.circle,
-                                          border: Border.all(color: Colors.white, width: 2),
+                                          border: Border.all(color: Colors.black, width: 2),
+                                          boxShadow: [BoxShadow(color: Color(0xFF39FF14), blurRadius: 8)],
                                         ),
                                       ),
                                     ),
                                 ],
                               ),
-                              title: Text(chat.user.name, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
-                              subtitle: status.isNotEmpty ? Text(status, style: TextStyle(color: Colors.white70, fontSize: 13)) : null,
+                              title: Text(chat.user.name, style: TextStyle(color: Color(0xFF39FF14), fontWeight: FontWeight.bold, fontSize: 18, shadows: [Shadow(color: Color(0xFF39FF14), blurRadius: 8)])),
+                              subtitle: status.isNotEmpty ? Text(status, style: TextStyle(color: Color(0xFF39FF14).withOpacity(0.7), fontSize: 13)) : null,
                               trailing: lastMsg != null ? Text(
                                 '${lastMsg.timestamp.hour.toString().padLeft(2, '0')}:${lastMsg.timestamp.minute.toString().padLeft(2, '0')}',
-                                style: TextStyle(color: Colors.white38, fontSize: 12),
+                                style: TextStyle(color: Color(0xFF39FF14).withOpacity(0.5), fontSize: 12),
                               ) : null,
                               onTap: () async {
                                 final isRegistered = contactIds[index].length == 28; // Firestore UIDs are 28 chars
@@ -768,7 +894,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
               decoration: BoxDecoration(
                 boxShadow: [
                   BoxShadow(
-                    color: Color(0xFF7C3AED).withOpacity(0.5),
+                    color: Color(0xFF39FF14).withOpacity(0.5),
                     blurRadius: 18,
                     spreadRadius: 2,
                   ),
@@ -776,8 +902,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 shape: BoxShape.circle,
               ),
               child: FloatingActionButton(
-                backgroundColor: Color(0xFF7C3AED),
-                child: Icon(Icons.person_add, color: Colors.white),
+                backgroundColor: Color(0xFF39FF14),
+                child: Icon(Icons.person_add, color: Colors.black, shadows: [Shadow(color: Color(0xFF39FF14), blurRadius: 12)]),
                 onPressed: () async {
                   final newContact = await showDialog<_NewContactData>(
                     context: context,
@@ -852,6 +978,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           'createdAt': FieldValue.serverTimestamp(),
                         });
                       }
+                      // Always try to upgrade unregistered contacts after adding
+                      await _upgradeUnregisteredContacts();
                     }
                   }
                 },
@@ -971,19 +1099,19 @@ class _InAppNotificationState extends State<_InAppNotification> {
               borderRadius: BorderRadius.circular(18),
               boxShadow: [
                 BoxShadow(
-                  color: Color(0xFF7C3AED).withOpacity(0.18),
+                  color: Color(0xFF39FF14).withOpacity(0.18),
                   blurRadius: 18,
                   offset: Offset(0, 8),
                 ),
               ],
-              border: Border.all(color: Color(0xFF7C3AED).withOpacity(0.18)),
+              border: Border.all(color: Color(0xFF39FF14).withOpacity(0.18)),
             ),
             child: Stack(
               children: [
                 _showReply
                     ? Row(
                   children: [
-                    Icon(Icons.mail, color: Color(0xFF7C3AED), size: 32),
+                    Icon(Icons.mail, color: Color(0xFF39FF14), size: 32),
                     SizedBox(width: 10),
                     Expanded(
                       child: TextField(
@@ -1011,28 +1139,28 @@ class _InAppNotificationState extends State<_InAppNotification> {
                         ? SizedBox(
                       width: 24,
                       height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF7C3AED)),
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF39FF14)),
                     )
                         : IconButton(
-                      icon: Icon(Icons.send, color: Color(0xFF7C3AED)),
+                      icon: Icon(Icons.send, color: Color(0xFF39FF14)),
                       onPressed: _handleReply,
                     ),
                   ],
                 )
                     : Row(
                   children: [
-                    Icon(Icons.mail, color: Color(0xFF7C3AED), size: 32),
+                    Icon(Icons.mail, color: Color(0xFF39FF14), size: 32),
                     SizedBox(width: 12),
                     CircleAvatar(
-                      backgroundColor: Color(0xFF7C3AED),
-                      child: Text(widget.fromUser.avatar, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      backgroundColor: Color(0xFF39FF14),
+                      child: Text(widget.fromUser.avatar, style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                     ),
                     SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(widget.fromUser.name, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          Text(widget.fromUser.name, style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                           SizedBox(height: 2),
                           Text(widget.message, style: TextStyle(color: Colors.white70), maxLines: 1, overflow: TextOverflow.ellipsis),
                         ],
@@ -1104,7 +1232,8 @@ class _ChatScreenState extends State<ChatScreen> {
         final data = doc.data() as Map<String, dynamic>;
         return Message(
           text: data['text'] ?? '',
-          sender: data['sender'] ?? '',
+          senderId: data['senderId'] ?? '',
+          senderAvatar: data['senderAvatar'] ?? '',
           timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
         );
       }).toList();
@@ -1143,7 +1272,8 @@ class _ChatScreenState extends State<ChatScreen> {
         .collection('messages')
         .add({
       'text': text,
-      'sender': _currentUserProfile.name,
+      'senderId': userId,
+      'senderAvatar': _currentUserProfile.avatar,
       'timestamp': FieldValue.serverTimestamp(),
     });
     _controller.clear();
@@ -1151,8 +1281,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildMessageBubble(Message msg, bool isMe, int index) {
     final bubbleGradient = isMe
-        ? LinearGradient(colors: [Color(0xFF7C3AED), Color(0xFF9F7AEA)])
-        : LinearGradient(colors: [Color(0xFF23234A), Color(0xFF23234A).withOpacity(0.7)]);
+        ? LinearGradient(colors: [Color(0xFF39FF14), Color(0xFF00C800)])
+        : LinearGradient(colors: [Colors.black, Color(0xFF222222)]);
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
       duration: Duration(milliseconds: 350 + index * 30),
@@ -1177,10 +1307,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   children: [
                     CircleAvatar(
                       radius: 16,
-                      backgroundColor: Color(0xFF7C3AED),
+                      backgroundColor: Color(0xFF39FF14),
                       child: Text(
-                        widget.chat.user.avatar,
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        msg.senderAvatar,
+                        style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
                       ),
                     ),
                     Positioned(
@@ -1190,9 +1320,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         width: 8,
                         height: 8,
                         decoration: BoxDecoration(
-                          color: Colors.greenAccent,
+                          color: Color(0xFF39FF14),
                           shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 1),
+                          border: Border.all(color: Colors.black, width: 1),
                         ),
                       ),
                     ),
@@ -1208,8 +1338,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   gradient: bubbleGradient,
                   boxShadow: [
                     BoxShadow(
-                      color: isMe ? Color(0xFF7C3AED).withOpacity(0.18) : Colors.black26,
-                      blurRadius: 8,
+                      color: isMe ? Color(0xFF39FF14).withOpacity(0.25) : Colors.black54,
+                      blurRadius: 12,
                       offset: Offset(0, 2),
                     ),
                   ],
@@ -1219,6 +1349,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     bottomLeft: Radius.circular(isMe ? 20 : 4),
                     bottomRight: Radius.circular(isMe ? 4 : 20),
                   ),
+                  border: Border.all(color: Color(0xFF39FF14).withOpacity(isMe ? 0.7 : 0.2), width: isMe ? 2 : 1),
                 ),
                 child: Column(
                   crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -1241,10 +1372,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 padding: const EdgeInsets.only(left: 6.0, right: 2.0),
                 child: CircleAvatar(
                   radius: 16,
-                  backgroundColor: Color(0xFF7C3AED),
+                  backgroundColor: Color(0xFF39FF14),
                   child: Text(
-                    _currentUserProfile.avatar,
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    msg.senderAvatar,
+                    style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
@@ -1258,13 +1389,13 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Gradient background
+        // Remove purple gradient, use black + neon green
         Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF23234A), Color(0xFF7C3AED), Color(0xFF181829)],
+              colors: [Colors.black, Color(0xFF39FF14).withOpacity(0.08), Colors.black],
             ),
           ),
         ),
@@ -1280,8 +1411,8 @@ class _ChatScreenState extends State<ChatScreen> {
             title: Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: Color(0xFF7C3AED),
-                  child: Text(widget.chat.user.avatar, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  backgroundColor: Color(0xFF39FF14),
+                  child: Text(widget.chat.user.avatar, style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                 ),
                 SizedBox(width: 10),
                 Text(widget.chat.user.name),
@@ -1307,7 +1438,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   itemCount: _messages.length,
                   itemBuilder: (context, index) {
                     final msg = _messages[index];
-                    final isMe = msg.sender == _currentUserProfile.name;
+                    final userId = FirebaseService.currentUserId;
+                    final isMe = msg.senderId == userId;
                     return _buildMessageBubble(msg, isMe, index);
                   },
                 ),
@@ -1324,7 +1456,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           borderRadius: BorderRadius.circular(30),
                           boxShadow: [
                             BoxShadow(
-                              color: Color(0xFF7C3AED).withOpacity(0.12),
+                              color: Color(0xFF39FF14).withOpacity(0.12),
                               blurRadius: 8,
                               offset: Offset(0, 2),
                             ),
@@ -1332,7 +1464,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                         child: TextField(
                           controller: _controller,
-                          style: TextStyle(color: Colors.white),
+                          style: TextStyle(color: Color(0xFF39FF14)),
+                          cursorColor: Color(0xFF39FF14),
                           decoration: InputDecoration(
                             hintText: 'Type a message...',
                             contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -1345,18 +1478,18 @@ class _ChatScreenState extends State<ChatScreen> {
                     SizedBox(width: 8),
                     Container(
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: [Color(0xFF7C3AED), Color(0xFF9F7AEA)]),
+                        gradient: LinearGradient(colors: [Color(0xFF39FF14), Color(0xFF00C800)]),
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: Color(0xFF7C3AED).withOpacity(0.4),
-                            blurRadius: 12,
-                            spreadRadius: 1,
+                            color: Color(0xFF39FF14).withOpacity(0.5),
+                            blurRadius: 18,
+                            spreadRadius: 2,
                           ),
                         ],
                       ),
                       child: IconButton(
-                        icon: Icon(Icons.send, color: Colors.white),
+                        icon: Icon(Icons.send, color: Colors.black, shadows: [Shadow(color: Color(0xFF39FF14), blurRadius: 8)]),
                         onPressed: _sendMessage,
                       ),
                     ),
@@ -1394,32 +1527,32 @@ class _AddContactDialogState extends State<_AddContactDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: Color(0xFF23234A),
+      backgroundColor: Color(0xFF101A10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      title: Text('Add Contact', style: TextStyle(color: Colors.white)),
+      title: Text('Add Contact', style: TextStyle(color: Color(0xFF39FF14))),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           TextField(
             controller: _nameController,
-            style: TextStyle(color: Colors.white),
+            style: TextStyle(color: Color(0xFF39FF14)),
             decoration: InputDecoration(
               labelText: 'Name',
-              labelStyle: TextStyle(color: Colors.white70),
+              labelStyle: TextStyle(color: Color(0xFF39FF14)),
               filled: true,
-              fillColor: Color(0xFF181829),
+              fillColor: Colors.black,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
             ),
           ),
           SizedBox(height: 16),
           TextField(
             controller: _avatarController,
-            style: TextStyle(color: Colors.white),
+            style: TextStyle(color: Color(0xFF39FF14)),
             decoration: InputDecoration(
               labelText: 'Avatar (initial or emoji)',
-              labelStyle: TextStyle(color: Colors.white70),
+              labelStyle: TextStyle(color: Color(0xFF39FF14)),
               filled: true,
-              fillColor: Color(0xFF181829),
+              fillColor: Colors.black,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
             ),
             maxLength: 2,
@@ -1429,8 +1562,8 @@ class _AddContactDialogState extends State<_AddContactDialog> {
             children: [
               DropdownButton<String>(
                 value: _selectedCountryCode,
-                dropdownColor: Color(0xFF23234A),
-                style: TextStyle(color: Colors.white),
+                dropdownColor: Color(0xFF101A10),
+                style: TextStyle(color: Color(0xFF39FF14)),
                 items: _countryCodes.map((code) => DropdownMenuItem(
                   value: code,
                   child: Text(code),
@@ -1441,13 +1574,13 @@ class _AddContactDialogState extends State<_AddContactDialog> {
               Expanded(
                 child: TextField(
                   controller: _phoneController,
-                  style: TextStyle(color: Colors.white),
+                  style: TextStyle(color: Color(0xFF39FF14)),
                   keyboardType: TextInputType.phone,
                   decoration: InputDecoration(
                     labelText: 'Phone Number',
-                    labelStyle: TextStyle(color: Colors.white70),
+                    labelStyle: TextStyle(color: Color(0xFF39FF14)),
                     filled: true,
-                    fillColor: Color(0xFF181829),
+                    fillColor: Colors.black,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                   ),
                 ),
@@ -1459,18 +1592,19 @@ class _AddContactDialogState extends State<_AddContactDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: Text('Cancel', style: TextStyle(color: Colors.white54)),
+          child: Text('Cancel', style: TextStyle(color: Color(0xFF39FF14).withOpacity(0.7))),
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(
-            backgroundColor: Color(0xFF7C3AED),
+            backgroundColor: Color(0xFF39FF14),
+            foregroundColor: Colors.black,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
           onPressed: () {
             final phone = _selectedCountryCode + _phoneController.text.trim();
             Navigator.of(context).pop(_NewContactData(_nameController.text, _avatarController.text, phone));
           },
-          child: Text('Add'),
+          child: Text('Add', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         ),
       ],
     );
@@ -1491,6 +1625,7 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
   late TextEditingController _controller;
   late ScrollController _scrollController;
   late StreamSubscription<QuerySnapshot> _messagesSubscription;
+  late UserProfile _currentUserProfile;
 
   @override
   void initState() {
@@ -1498,7 +1633,22 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
     messages = [];
     _controller = TextEditingController();
     _scrollController = ScrollController();
+    _initUserProfile();
     _listenToMessages();
+  }
+
+  void _initUserProfile() {
+    final user = FirebaseService.auth.currentUser;
+    if (user != null) {
+      _currentUserProfile = UserProfile(
+        name: user.displayName ?? user.email?.split('@').first ?? 'User',
+        avatar: (user.displayName != null && user.displayName!.isNotEmpty)
+            ? user.displayName![0].toUpperCase()
+            : (user.email?.substring(0, 1).toUpperCase() ?? 'U'),
+      );
+    } else {
+      _currentUserProfile = UserProfile(name: 'Me', avatar: 'M');
+    }
   }
 
   void _listenToMessages() {
@@ -1513,7 +1663,8 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
         final data = doc.data() as Map<String, dynamic>;
         return Message(
           text: data['text'] ?? '',
-          sender: data['sender'] ?? '',
+          senderId: data['senderId'] ?? '',
+          senderAvatar: data['senderAvatar'] ?? '',
           timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
         );
       }).toList();
@@ -1541,13 +1692,15 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
   void _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
+    final userId = FirebaseService.currentUserId;
     await FirebaseFirestore.instance
         .collection('chats')
         .doc(widget.chatId)
         .collection('messages')
         .add({
       'text': text,
-      'sender': widget.contact.name,
+      'senderId': userId,
+      'senderAvatar': _currentUserProfile.avatar,
       'timestamp': FieldValue.serverTimestamp(),
     });
     _controller.clear();
@@ -1557,13 +1710,13 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Gradient background
+        // Remove purple gradient, use black + neon green
         Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF23234A), Color(0xFF7C3AED), Color(0xFF181829)],
+              colors: [Colors.black, Color(0xFF39FF14).withOpacity(0.08), Colors.black],
             ),
           ),
         ),
@@ -1579,8 +1732,8 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
             title: Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: Color(0xFF7C3AED),
-                  child: Text(widget.contact.avatar, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  backgroundColor: Color(0xFF39FF14),
+                  child: Text(widget.contact.avatar, style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                 ),
                 SizedBox(width: 10),
                 Text(widget.contact.name),
@@ -1597,7 +1750,8 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
                     final msg = messages[index];
-                    final isMe = msg.sender == widget.contact.name;
+                    final userId = FirebaseService.currentUserId;
+                    final isMe = msg.senderId == userId;
                     return _buildMessageBubble(msg, isMe, index);
                   },
                 ),
@@ -1614,7 +1768,7 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
                           borderRadius: BorderRadius.circular(30),
                           boxShadow: [
                             BoxShadow(
-                              color: Color(0xFF7C3AED).withOpacity(0.12),
+                              color: Color(0xFF39FF14).withOpacity(0.12),
                               blurRadius: 8,
                               offset: Offset(0, 2),
                             ),
@@ -1622,7 +1776,8 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
                         ),
                         child: TextField(
                           controller: _controller,
-                          style: TextStyle(color: Colors.white),
+                          style: TextStyle(color: Color(0xFF39FF14)),
+                          cursorColor: Color(0xFF39FF14),
                           decoration: InputDecoration(
                             hintText: 'Type a message...',
                             contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -1635,18 +1790,18 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
                     SizedBox(width: 8),
                     Container(
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: [Color(0xFF7C3AED), Color(0xFF9F7AEA)]),
+                        gradient: LinearGradient(colors: [Color(0xFF39FF14), Color(0xFF00C800)]),
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: Color(0xFF7C3AED).withOpacity(0.4),
-                            blurRadius: 12,
-                            spreadRadius: 1,
+                            color: Color(0xFF39FF14).withOpacity(0.5),
+                            blurRadius: 18,
+                            spreadRadius: 2,
                           ),
                         ],
                       ),
                       child: IconButton(
-                        icon: Icon(Icons.send, color: Colors.white),
+                        icon: Icon(Icons.send, color: Colors.black, shadows: [Shadow(color: Color(0xFF39FF14), blurRadius: 8)]),
                         onPressed: _sendMessage,
                       ),
                     ),
@@ -1662,8 +1817,8 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
 
   Widget _buildMessageBubble(Message msg, bool isMe, int index) {
     final bubbleGradient = isMe
-        ? LinearGradient(colors: [Color(0xFF7C3AED), Color(0xFF9F7AEA)])
-        : LinearGradient(colors: [Color(0xFF23234A), Color(0xFF23234A).withOpacity(0.7)]);
+        ? LinearGradient(colors: [Color(0xFF39FF14), Color(0xFF00C800)])
+        : LinearGradient(colors: [Colors.black, Color(0xFF222222)]);
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
       duration: Duration(milliseconds: 350 + index * 30),
@@ -1688,10 +1843,10 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
                   children: [
                     CircleAvatar(
                       radius: 16,
-                      backgroundColor: Color(0xFF7C3AED),
+                      backgroundColor: Color(0xFF39FF14),
                       child: Text(
-                        widget.contact.avatar,
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        msg.senderAvatar,
+                        style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
                       ),
                     ),
                     Positioned(
@@ -1701,9 +1856,9 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
                         width: 8,
                         height: 8,
                         decoration: BoxDecoration(
-                          color: Colors.greenAccent,
+                          color: Color(0xFF39FF14),
                           shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 1),
+                          border: Border.all(color: Colors.black, width: 1),
                         ),
                       ),
                     ),
@@ -1719,8 +1874,8 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
                   gradient: bubbleGradient,
                   boxShadow: [
                     BoxShadow(
-                      color: isMe ? Color(0xFF7C3AED).withOpacity(0.18) : Colors.black26,
-                      blurRadius: 8,
+                      color: isMe ? Color(0xFF39FF14).withOpacity(0.25) : Colors.black54,
+                      blurRadius: 12,
                       offset: Offset(0, 2),
                     ),
                   ],
@@ -1730,6 +1885,7 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
                     bottomLeft: Radius.circular(isMe ? 20 : 4),
                     bottomRight: Radius.circular(isMe ? 4 : 20),
                   ),
+                  border: Border.all(color: Color(0xFF39FF14).withOpacity(isMe ? 0.7 : 0.2), width: isMe ? 2 : 1),
                 ),
                 child: Column(
                   crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -1752,10 +1908,10 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
                 padding: const EdgeInsets.only(left: 6.0, right: 2.0),
                 child: CircleAvatar(
                   radius: 16,
-                  backgroundColor: Color(0xFF7C3AED),
+                  backgroundColor: Color(0xFF39FF14),
                   child: Text(
-                    widget.contact.avatar,
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    msg.senderAvatar,
+                    style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
