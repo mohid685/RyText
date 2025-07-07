@@ -15,7 +15,7 @@ void main() async {
   );
   
   // Verify Firebase
-  debugPrint('Firebase initialized: [32m${Firebase.app().options.projectId}[0m');
+  debugPrint('Firebase initialized: \x1b[32m[32m[32m[32m${Firebase.app().options.projectId}\x1b[0m');
   
   // Test Firebase Service
   debugPrint('✅ Firebase Service: Demo user ID: ${FirebaseService.currentUserId}');
@@ -128,6 +128,230 @@ class MyMessengerApp extends StatelessWidget {
   }
 }
 
+// --- Global Chat State for open chat tracking ---
+class GlobalChatState {
+  static String? currentlyOpenChatId;
+  static String? currentlyViewingUserId; // Track which user's chat is open
+}
+
+// --- Global Message Listener Widget ---
+class GlobalMessageListener extends StatefulWidget {
+  final Widget child;
+  final UserProfile currentUserProfile;
+  GlobalMessageListener({required this.child, required this.currentUserProfile});
+  @override
+  State<GlobalMessageListener> createState() => _GlobalMessageListenerState();
+}
+
+class _GlobalMessageListenerState extends State<GlobalMessageListener> {
+  Map<String, StreamSubscription<QuerySnapshot>> _messageSubscriptions = {};
+  bool _showingNotification = false;
+  List<Chat> chats = [];
+  Map<String, UserProfile> userProfiles = {};
+  StreamSubscription<QuerySnapshot>? _chatsSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _listenToChats();
+  }
+
+  @override
+  void dispose() {
+    _chatsSubscription?.cancel();
+    for (var sub in _messageSubscriptions.values) {
+      sub.cancel();
+    }
+    super.dispose();
+  }
+
+  void _listenToChats() {
+    final userId = FirebaseService.currentUserId;
+    if (userId == null) return;
+    
+    _chatsSubscription = FirebaseService.getUserChatsStream().listen((snapshot) async {
+      final newChatIds = <String>[];
+      final futures = <Future>[];
+      
+      for (var doc in snapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final participants = List<String>.from(data['participants'] ?? []);
+        final otherUserId = participants.firstWhere((id) => id != userId, orElse: () => '');
+        if (otherUserId.isNotEmpty) {
+          futures.add(_fetchUserProfile(otherUserId));
+        }
+        newChatIds.add(doc.id);
+      }
+      
+      await Future.wait(futures);
+      
+      chats = snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        final participants = List<String>.from(data['participants'] ?? []);
+        final otherUserId = participants.firstWhere((id) => id != userId, orElse: () => '');
+        if (otherUserId.isNotEmpty && userProfiles.containsKey(otherUserId)) {
+          return Chat(user: userProfiles[otherUserId]!, messages: []);
+        }
+        return null;
+      }).whereType<Chat>().toList();
+      
+      _setupMessageListeners(newChatIds);
+    });
+  }
+
+  Future<void> _fetchUserProfile(String userId) async {
+    if (!userProfiles.containsKey(userId)) {
+      final data = await FirebaseService.getUserProfile(userId);
+      if (data != null) {
+        print('[DEBUG] Building UserProfile from data: $data');
+        userProfiles[userId] = UserProfile(
+          name: data['name'] ?? 'User',
+          avatar: (() {
+            final str = (data['avatar'] ?? (data['name'] ?? 'U')).toString();
+            return str.isNotEmpty ? str.substring(0, 1).toUpperCase() : 'U';
+          })(),
+        );
+      }
+    }
+  }
+
+  void _setupMessageListeners(List<String> chatIds) {
+    final userId = FirebaseService.currentUserId;
+    if (userId == null) return;
+    // Remove listeners for chats that no longer exist
+    _messageSubscriptions.keys.where((id) => !chatIds.contains(id)).toList().forEach((id) {
+      _messageSubscriptions[id]?.cancel();
+      _messageSubscriptions.remove(id);
+    });
+    // Add listeners for new chats
+    for (final chatId in chatIds) {
+      if (_messageSubscriptions.containsKey(chatId)) continue;
+      final sub = FirebaseFirestore.instance
+          .collection('chats')
+          .doc(chatId)
+          .collection('messages')
+          .orderBy('timestamp', descending: true)
+          .limit(1)
+          .snapshots()
+          .listen((snapshot) async {
+        print('[DEBUG] Listener triggered for chatId=$chatId, docs=[32m${snapshot.docs.length}[0m');
+        if (snapshot.docs.isNotEmpty) {
+          final data = snapshot.docs.first.data() as Map<String, dynamic>;
+          final senderId = data['senderId'] ?? '';
+          final senderAvatar = data['senderAvatar'] ?? '';
+          final text = data['text'] ?? '';
+          // Get the other participant in this chat
+          final chatDoc = await FirebaseFirestore.instance.collection('chats').doc(chatId).get();
+          final participants = List<String>.from(chatDoc['participants'] ?? []);
+          final otherUserId = participants.firstWhere((id) => id != userId, orElse: () => '');
+          // Always compute deterministic chatId
+          final sortedParticipants = [userId, otherUserId]..sort();
+          final deterministicChatId = sortedParticipants.join('_');
+          print('[DEBUG] Notification check: senderId=$senderId, currentUser=$userId, currentlyViewing=${GlobalChatState.currentlyViewingUserId}, showingNotification=$_showingNotification, chatId=$chatId, deterministicChatId=$deterministicChatId, otherUserId=$otherUserId');
+          // Only show notification if:
+          // 1. Not from current user
+          // 2. Not from the user we're currently chatting with
+          // 3. Not already showing a notification
+          if (senderId.isNotEmpty &&
+              senderId != userId &&
+              otherUserId != GlobalChatState.currentlyViewingUserId &&
+              !_showingNotification) {
+            print('[DEBUG] Notification logic entered for chatId=$chatId, senderId=$senderId');
+            // Fetch the sender's user profile
+            UserProfile? fromUser;
+            if (userProfiles.containsKey(senderId)) {
+              fromUser = userProfiles[senderId];
+            } else {
+              // Fetch sender profile if not cached
+              final senderData = await FirebaseService.getUserProfile(senderId);
+              if (senderData != null) {
+                fromUser = UserProfile(
+                  name: senderData['name'] ?? 'User',
+                  avatar: (() {
+                    final str = (senderData['avatar'] ?? (senderData['name'] ?? 'U')).toString();
+                    return str.isNotEmpty ? str.substring(0, 1).toUpperCase() : 'U';
+                  })(),
+                );
+                userProfiles[senderId] = fromUser;
+              }
+            }
+            if (fromUser != null) {
+              print('[DEBUG] Showing notification for senderId=$senderId, chatId=$chatId, deterministicChatId=$deterministicChatId');
+              _showingNotification = true;
+              _showInAppNotification(context, fromUser, text, (replyText) async {
+                // Send reply to this chat
+                await FirebaseFirestore.instance
+                    .collection('chats')
+                    .doc(deterministicChatId)
+                    .collection('messages')
+                    .add({
+                  'text': replyText,
+                  'senderId': userId,
+                  'senderAvatar': widget.currentUserProfile.avatar,
+                  'timestamp': FieldValue.serverTimestamp(),
+                });
+              }, -1, chatId: deterministicChatId, senderUserId: senderId);
+              // Reset flag after notification duration
+              Future.delayed(Duration(seconds: 5), () {
+                _showingNotification = false;
+                print('[DEBUG] _showingNotification reset to false');
+              });
+            } else {
+              print('[DEBUG] fromUser is null for senderId=$senderId');
+            }
+          } else {
+            print('[DEBUG] Notification NOT shown for chatId=$chatId, senderId=$senderId');
+          }
+        } else {
+          print('[DEBUG] No docs in snapshot for chatId=$chatId');
+        }
+      });
+      _messageSubscriptions[chatId] = sub;
+    }
+  }
+
+  void _showInAppNotification(BuildContext context, UserProfile fromUser, String message, void Function(String replyText) onSendReply, int chatIndex, {String? chatId, String? senderUserId}) {
+    print('[DEBUG] _showInAppNotification called for fromUser=${fromUser.name}, chatId=$chatId, senderUserId=$senderUserId');
+    final overlay = Overlay.of(context);
+    late OverlayEntry overlayEntry;
+    overlayEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        top: 40,
+        left: 20,
+        right: 20,
+        child: _InAppNotification(
+          fromUser: fromUser,
+          message: message,
+          overlayEntry: overlayEntry,
+          onTap: () {
+            overlayEntry.remove();
+            print('[DEBUG] Notification overlay removed for chatId=$chatId, senderUserId=$senderUserId');
+            // Navigate to the chat if we have a valid chatId and senderUserId
+            if (chatId != null && senderUserId != null) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => RegisteredChatScreen(
+                    chatId: chatId,
+                    contact: fromUser,
+                  ),
+                ),
+              );
+            }
+          },
+          onSendReply: onSendReply,
+        ),
+      ),
+    );
+    overlay.insert(overlayEntry);
+    print('[DEBUG] Notification overlay inserted for chatId=$chatId, senderUserId=$senderUserId');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.child;
+  }
+}
+
 class AuthGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -138,7 +362,19 @@ class AuthGate extends StatelessWidget {
           return SplashScreen();
         }
         if (snapshot.hasData) {
-          return ChatListScreen();
+          // Get current user profile for notification replies
+          final user = FirebaseService.auth.currentUser;
+          final userProfile = UserProfile(
+            name: user?.displayName ?? user?.email?.split('@').first ?? 'User',
+            avatar: (() {
+              final str = (user?.email != null && user!.email!.isNotEmpty ? user.email!.substring(0, 1).toUpperCase() : 'U');
+              return str.isNotEmpty ? str : 'U';
+            })(),
+          );
+          return GlobalMessageListener(
+            currentUserProfile: userProfile,
+            child: ChatListScreen(),
+          );
         }
         return AuthScreen();
       },
@@ -481,9 +717,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
       );
       _currentUserProfile = UserProfile(
         name: user.displayName ?? user.email?.split('@').first ?? 'User',
-        avatar: (user.displayName != null && user.displayName!.isNotEmpty)
-            ? user.displayName![0].toUpperCase()
-            : (user.email?.substring(0, 1).toUpperCase() ?? 'U'),
+        avatar: (() {
+          final str = (user.displayName != null && user.displayName!.isNotEmpty ? user.displayName!.substring(0, 1).toUpperCase() : (user.email != null && user.email!.isNotEmpty ? user.email!.substring(0, 1).toUpperCase() : 'U'));
+          return str.isNotEmpty ? str : 'U';
+        })(),
       );
     }
     _listenToChats();
@@ -494,6 +731,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       final newChats = <Chat>[];
       final futures = <Future>[];
       final userId = FirebaseService.currentUserId;
+      final newChatIds = <String>[];
       for (var doc in snapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
         final participants = List<String>.from(data['participants'] ?? []);
@@ -501,6 +739,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         if (otherUserId.isNotEmpty) {
           futures.add(_fetchUserProfile(otherUserId));
         }
+        newChatIds.add(doc.id);
       }
       await Future.wait(futures);
       for (var doc in snapshot.docs) {
@@ -526,7 +765,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
       if (data != null) {
         userProfiles[userId] = UserProfile(
           name: data['name'] ?? 'User',
-          avatar: (data['avatar'] ?? (data['name'] ?? 'U')).toString().substring(0, 1).toUpperCase(),
+          avatar: (() {
+            final str = (data['avatar'] ?? (data['name'] ?? 'U')).toString();
+            return str.isNotEmpty ? str.substring(0, 1).toUpperCase() : 'U';
+          })(),
         );
       }
     }
@@ -573,7 +815,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
         final data = doc.data() as Map<String, dynamic>;
         final user = UserProfile(
           name: data['name'] ?? 'User',
-          avatar: (data['avatar'] ?? (data['name'] ?? 'U')).toString().substring(0, 1).toUpperCase(),
+          avatar: (() {
+            final str = (data['avatar'] ?? (data['name'] ?? 'U')).toString();
+            return str.isNotEmpty ? str.substring(0, 1).toUpperCase() : 'U';
+          })(),
         );
         newChats.add(Chat(user: user, messages: []));
         newContactIds.add(doc.id);
@@ -607,42 +852,71 @@ class _ChatListScreenState extends State<ChatListScreen> {
           final otherUserId = otherUserDoc.id;
           if (otherUserId == userId) continue; // Don't add yourself
 
-          // Create chat if not exists
-          final chatsSnap = await FirebaseFirestore.instance
-              .collection('chats')
-              .where('participants', arrayContains: userId)
-              .get();
-          String? chatId;
-          for (var chatDoc in chatsSnap.docs) {
-            final participants = List<String>.from(chatDoc['participants'] ?? []);
-            if (participants.contains(otherUserId)) {
-              chatId = chatDoc.id;
-              break;
-            }
-          }
-          if (chatId == null) {
-            final chatDoc = await FirebaseFirestore.instance.collection('chats').add({
-              'participants': [userId, otherUserId],
+          // Only create chat if not exists, but do NOT add a contact for the other user
+          final participants = [userId, otherUserId]..sort();
+          final chatId = participants.join('_');
+          final chatRef = FirebaseFirestore.instance.collection('chats').doc(chatId);
+          final chatDoc = await chatRef.get();
+          if (!chatDoc.exists) {
+            await chatRef.set({
+              'participants': participants,
               'createdAt': FieldValue.serverTimestamp(),
             });
-            chatId = chatDoc.id;
           }
 
-          // Update contact to registered
+          // Move contact to registered userId as doc ID (for current user only)
+          final newContactData = {
+            'name': otherUserDoc['name'] ?? '',
+            'avatar': otherUserDoc['avatar'] ?? '',
+            'phone': data['phone'],
+            'registered': true,
+            'chatId': chatId,
+            'createdAt': data['createdAt'],
+          };
           await FirebaseFirestore.instance
               .collection('users')
               .doc(userId)
               .collection('contacts')
-              .doc(doc.id)
-              .update({
-            'name': otherUserDoc['name'] ?? '',
-            'avatar': otherUserDoc['avatar'] ?? '',
-            'registered': true,
-            'chatId': chatId,
-          });
+              .doc(otherUserId)
+              .set(newContactData);
+          // Delete old contact doc if doc.id != otherUserId
+          if (doc.id != otherUserId) {
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(userId)
+                .collection('contacts')
+                .doc(doc.id)
+                .delete();
+          }
         }
       }
     }
+  }
+
+  // --- Track currently open chat ---
+  Future<void> _openRegisteredChat(String chatId, UserProfile contact, int chatIndex) async {
+    final userId = FirebaseService.currentUserId;
+    final contactUserId = contactIds[chatIndex]; // Always the userId for registered contacts
+    // Compute chatId using sorted user IDs
+    final participants = [userId, contactUserId]..sort();
+    final correctChatId = participants.join('_');
+    setState(() {
+      GlobalChatState.currentlyOpenChatId = correctChatId;
+      GlobalChatState.currentlyViewingUserId = contactUserId;
+    });
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RegisteredChatScreen(
+          chatId: correctChatId,
+          contact: contact,
+        ),
+      ),
+    );
+    setState(() {
+      GlobalChatState.currentlyOpenChatId = null;
+      GlobalChatState.currentlyViewingUserId = null;
+    });
   }
 
   @override
@@ -862,15 +1136,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                 final data = contactDoc.data() as Map<String, dynamic>?;
                                 if (data != null && data['registered'] == true && data['chatId'] != null) {
                                   // Open real-time chat using chatId
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => RegisteredChatScreen(
-                                        chatId: data['chatId'],
-                                        contact: chats[index].user,
-                                      ),
-                                    ),
-                                  );
+                                  await _openRegisteredChat(data['chatId'], chats[index].user, index);
                                 } else {
                                   // Not registered, show Invite
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -928,27 +1194,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           );
                           return;
                         }
-                        // Create chat in 'chats' collection (if not already exists)
-                        final chatsSnap = await FirebaseFirestore.instance
-                            .collection('chats')
-                            .where('participants', arrayContains: userId)
-                            .get();
-                        String? chatId;
-                        for (var doc in chatsSnap.docs) {
-                          final participants = List<String>.from(doc['participants'] ?? []);
-                          if (participants.contains(otherUserId)) {
-                            chatId = doc.id;
-                            break;
-                          }
-                        }
-                        if (chatId == null) {
-                          final chatDoc = await FirebaseFirestore.instance.collection('chats').add({
-                            'participants': [userId, otherUserId],
+                        // Always use deterministic chatId for registered users
+                        final participants = [userId, otherUserId]..sort();
+                        final deterministicChatId = participants.join('_');
+                        final chatRef = FirebaseFirestore.instance.collection('chats').doc(deterministicChatId);
+                        final chatDoc = await chatRef.get();
+                        if (!chatDoc.exists) {
+                          await chatRef.set({
+                            'participants': participants,
                             'createdAt': FieldValue.serverTimestamp(),
                           });
-                          chatId = chatDoc.id;
                         }
-                        // Save contact as registered user
+                        // Save contact ONLY for the current user (user who is adding)
                         await FirebaseFirestore.instance
                             .collection('users')
                             .doc(userId)
@@ -958,7 +1215,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           'name': otherUserDoc['name'] ?? '',
                           'avatar': otherUserDoc['avatar'] ?? '',
                           'phone': newContact.phone.trim(),
-                          'chatId': chatId,
+                          'chatId': deterministicChatId,
                           'registered': true,
                           'createdAt': FieldValue.serverTimestamp(),
                         });
@@ -972,7 +1229,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
                             .doc(contactId)
                             .set({
                           'name': newContact.name.trim(),
-                          'avatar': newContact.avatar.trim().isNotEmpty ? newContact.avatar.trim() : newContact.name.trim()[0].toUpperCase(),
+                          'avatar': newContact.avatar.trim().isNotEmpty 
+                              ? newContact.avatar.trim()
+                              : newContact.name.trim()[0].toUpperCase(),
                           'phone': newContact.phone.trim(),
                           'registered': false,
                           'createdAt': FieldValue.serverTimestamp(),
@@ -991,7 +1250,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  void _showInAppNotification(BuildContext context, UserProfile fromUser, String message, void Function(String replyText) onSendReply, int chatIndex) {
+  void _showInAppNotification(BuildContext context, UserProfile fromUser, String message, void Function(String replyText) onSendReply, int chatIndex, {String? chatId, String? senderUserId}) {
     final overlay = Overlay.of(context);
     late OverlayEntry overlayEntry;
     overlayEntry = OverlayEntry(
@@ -1005,27 +1264,25 @@ class _ChatListScreenState extends State<ChatListScreen> {
           overlayEntry: overlayEntry,
           onTap: () {
             overlayEntry.remove();
-            // Navigate to the chat with fromUser
-            final chat = chats[chatIndex];
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ChatScreen(
-                  chat: chat,
-                  contactId: contactIds[chatIndex],
-                  onOtherUserMessage: (fromUser, message) {
-                    if (fromUser.name != chat.user.name) {
-                      _showInAppNotification(context, fromUser, message, onSendReply, chatIndex);
-                    }
-                  },
+            print('[DEBUG] Notification overlay removed for chatId=$chatId, senderUserId=$senderUserId');
+            // Navigate to the chat if we have a valid chatId and senderUserId
+            if (chatId != null && senderUserId != null) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => RegisteredChatScreen(
+                    chatId: chatId,
+                    contact: fromUser,
+                  ),
                 ),
-              ),
-            );
+              );
+            }
           },
           onSendReply: onSendReply,
         ),
       ),
     );
     overlay.insert(overlayEntry);
+    print('[DEBUG] Notification overlay inserted for chatId=$chatId, senderUserId=$senderUserId');
   }
 }
 
@@ -1206,9 +1463,10 @@ class _ChatScreenState extends State<ChatScreen> {
     if (user != null) {
       _currentUserProfile = UserProfile(
         name: user.displayName ?? user.email?.split('@').first ?? 'User',
-        avatar: (user.displayName != null && user.displayName!.isNotEmpty)
-            ? user.displayName![0].toUpperCase()
-            : (user.email?.substring(0, 1).toUpperCase() ?? 'U'),
+        avatar: (() {
+          final str = (user.email != null && user.email!.isNotEmpty ? user.email!.substring(0, 1).toUpperCase() : 'U');
+          return str.isNotEmpty ? str : 'U';
+        })(),
       );
     } else {
       _currentUserProfile = UserProfile(name: 'Me', avatar: 'M');
@@ -1416,15 +1674,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 SizedBox(width: 10),
                 Text(widget.chat.user.name),
-                SizedBox(width: 8),
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: Colors.greenAccent,
-                    shape: BoxShape.circle,
-                  ),
-                ),
               ],
             ),
             backgroundColor: Colors.transparent,
@@ -1635,6 +1884,14 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
     _scrollController = ScrollController();
     _initUserProfile();
     _listenToMessages();
+    GlobalChatState.currentlyOpenChatId = widget.chatId;
+    // Get the other participant's ID
+    final userId = FirebaseService.currentUserId;
+    FirebaseFirestore.instance.collection('chats').doc(widget.chatId).get().then((chatDoc) {
+      final participants = List<String>.from(chatDoc['participants'] ?? []);
+      final otherUserId = participants.firstWhere((id) => id != userId, orElse: () => '');
+      GlobalChatState.currentlyViewingUserId = otherUserId;
+    });
   }
 
   void _initUserProfile() {
@@ -1642,9 +1899,10 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
     if (user != null) {
       _currentUserProfile = UserProfile(
         name: user.displayName ?? user.email?.split('@').first ?? 'User',
-        avatar: (user.displayName != null && user.displayName!.isNotEmpty)
-            ? user.displayName![0].toUpperCase()
-            : (user.email?.substring(0, 1).toUpperCase() ?? 'U'),
+        avatar: (() {
+          final str = (user.email != null && user.email!.isNotEmpty ? user.email!.substring(0, 1).toUpperCase() : 'U');
+          return str.isNotEmpty ? str : 'U';
+        })(),
       );
     } else {
       _currentUserProfile = UserProfile(name: 'Me', avatar: 'M');
@@ -1686,6 +1944,8 @@ class _RegisteredChatScreenState extends State<RegisteredChatScreen> {
   @override
   void dispose() {
     _messagesSubscription.cancel();
+    GlobalChatState.currentlyOpenChatId = null;
+    GlobalChatState.currentlyViewingUserId = null;
     super.dispose();
   }
 
