@@ -704,6 +704,15 @@ class _ChatListScreenState extends State<ChatListScreen> {
     _initializeUserProfile();
     _listenToContacts();
     _upgradeUnregisteredContacts();
+    
+    // Set up periodic upgrade check
+    Timer.periodic(Duration(seconds: 30), (timer) {
+      if (mounted) {
+        _upgradeUnregisteredContacts();
+      } else {
+        timer.cancel();
+      }
+    });
   }
 
   Future<void> _initializeUserProfile() async {
@@ -803,16 +812,19 @@ class _ChatListScreenState extends State<ChatListScreen> {
   void _listenToContacts() {
     final userId = FirebaseService.currentUserId;
     if (userId == null) return;
+    print('[DEBUG] _listenToContacts: Starting listener for user $userId');
     _contactsSubscription = FirebaseFirestore.instance
         .collection('users')
         .doc(userId)
         .collection('contacts')
         .snapshots()
         .listen((snapshot) {
+      print('[DEBUG] _listenToContacts: Received ${snapshot.docs.length} contacts for user $userId');
       final newChats = <Chat>[];
       final newContactIds = <String>[];
       for (var doc in snapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
+        print('[DEBUG] _listenToContacts: Contact ${doc.id} - name: ${data['name']}, registered: ${data['registered']}');
         final user = UserProfile(
           name: data['name'] ?? 'User',
           avatar: (() {
@@ -823,6 +835,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         newChats.add(Chat(user: user, messages: []));
         newContactIds.add(doc.id);
       }
+      print('[DEBUG] _listenToContacts: Setting ${newChats.length} chats and ${newContactIds.length} contactIds');
       setState(() {
         chats = newChats;
         contactIds = newContactIds;
@@ -833,28 +846,49 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Future<void> _upgradeUnregisteredContacts() async {
     final userId = FirebaseService.currentUserId;
     if (userId == null) return;
+
+    print('[DEBUG] _upgradeUnregisteredContacts: Starting upgrade for user $userId');
+
+    // Only get contacts for the CURRENT user - this is the key fix
     final contactsSnap = await FirebaseFirestore.instance
         .collection('users')
-        .doc(userId)
+        .doc(userId)  // This ensures we only work with current user's contacts
         .collection('contacts')
+        .where('registered', isEqualTo: false)  // Only unregistered contacts
         .get();
+
+    print('[DEBUG] _upgradeUnregisteredContacts: Found ${contactsSnap.docs.length} unregistered contacts');
 
     for (var doc in contactsSnap.docs) {
       final data = doc.data();
-      if (data['registered'] == false && data['phone'] != null) {
-        // Check if this phone is now registered
+      print('[DEBUG] _upgradeUnregisteredContacts: Checking contact ${doc.id} with phone ${data['phone']}');
+      
+      if (data['phone'] != null) {
+        // Check if this phone number is now registered
         final usersSnap = await FirebaseFirestore.instance
             .collection('users')
             .where('phone', isEqualTo: data['phone'])
             .get();
+
+        print('[DEBUG] _upgradeUnregisteredContacts: Found ${usersSnap.docs.length} users with phone ${data['phone']}');
+
         if (usersSnap.docs.isNotEmpty) {
           final otherUserDoc = usersSnap.docs.first;
           final otherUserId = otherUserDoc.id;
-          if (otherUserId == userId) continue; // Don't add yourself
+          print('[DEBUG] _upgradeUnregisteredContacts: Found registered user $otherUserId');
 
-          // Only create chat if not exists, but do NOT add a contact for the other user
+          // Prevent adding yourself
+          if (otherUserId == userId) {
+            print('[DEBUG] _upgradeUnregisteredContacts: Skipping self-reference');
+            continue;
+          }
+
+          // Create deterministic chat ID
           final participants = [userId, otherUserId]..sort();
           final chatId = participants.join('_');
+          print('[DEBUG] _upgradeUnregisteredContacts: Creating chat $chatId');
+
+          // Create chat if it doesn't exist
           final chatRef = FirebaseFirestore.instance.collection('chats').doc(chatId);
           final chatDoc = await chatRef.get();
           if (!chatDoc.exists) {
@@ -862,24 +896,29 @@ class _ChatListScreenState extends State<ChatListScreen> {
               'participants': participants,
               'createdAt': FieldValue.serverTimestamp(),
             });
+            print('[DEBUG] _upgradeUnregisteredContacts: Created new chat');
+          } else {
+            print('[DEBUG] _upgradeUnregisteredContacts: Chat already exists');
           }
 
-          // Move contact to registered userId as doc ID (for current user only)
-          final newContactData = {
-            'name': otherUserDoc['name'] ?? '',
-            'avatar': otherUserDoc['avatar'] ?? '',
+          // Update THIS user's contact to registered status
+          // IMPORTANT: Only update the current user's contact, never create reciprocal contacts
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)  // Only current user
+              .collection('contacts')
+              .doc(otherUserId)  // Use otherUserId as document ID for registered contacts
+              .set({
+            'name': otherUserDoc['name'] ?? data['name'] ?? '',
+            'avatar': otherUserDoc['avatar'] ?? data['avatar'] ?? '',
             'phone': data['phone'],
             'registered': true,
             'chatId': chatId,
             'createdAt': data['createdAt'],
-          };
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(userId)
-              .collection('contacts')
-              .doc(otherUserId)
-              .set(newContactData);
-          // Delete old contact doc if doc.id != otherUserId
+          });
+          print('[DEBUG] _upgradeUnregisteredContacts: Updated contact to registered status');
+
+          // Delete the old unregistered contact entry if it has a different ID
           if (doc.id != otherUserId) {
             await FirebaseFirestore.instance
                 .collection('users')
@@ -887,10 +926,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 .collection('contacts')
                 .doc(doc.id)
                 .delete();
+            print('[DEBUG] _upgradeUnregisteredContacts: Deleted old contact entry ${doc.id}');
           }
+        } else {
+          print('[DEBUG] _upgradeUnregisteredContacts: No registered user found for phone ${data['phone']}');
         }
       }
     }
+    print('[DEBUG] _upgradeUnregisteredContacts: Upgrade completed for user $userId');
   }
 
   // --- Track currently open chat ---
@@ -928,6 +971,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    print('[DEBUG] build: chats.length=${chats.length}, contactIds.length=${contactIds.length}');
+    for (int i = 0; i < chats.length; i++) {
+      print('[DEBUG] build: chat[$i] = ${chats[i].user.name} (contactId: ${i < contactIds.length ? contactIds[i] : 'N/A'})');
+    }
     final filteredChats = _search.isEmpty
         ? chats
         : chats.where((c) => c.user.name.toLowerCase().contains(_search.toLowerCase()) || c.user.avatar.toLowerCase().contains(_search.toLowerCase())).toList();
@@ -1023,6 +1070,48 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     
                   } catch (e) {
                     debugPrint('❌ Firebase Service Test Error: $e');
+                  }
+                },
+              ),
+              IconButton(
+                icon: Icon(Icons.contacts, color: Color(0xFF39FF14)),
+                onPressed: () async {
+                  // Debug contact list
+                  try {
+                    final userId = FirebaseService.currentUserId;
+                    if (userId != null) {
+                      print('[DEBUG] 🔍 Checking contacts for user $userId');
+                      final contactsSnap = await FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(userId)
+                          .collection('contacts')
+                          .get();
+                      print('[DEBUG] 🔍 Found ${contactsSnap.docs.length} contacts');
+                      for (var doc in contactsSnap.docs) {
+                        final data = doc.data();
+                        print('[DEBUG] 🔍 Contact ${doc.id}: name=${data['name']}, registered=${data['registered']}');
+                      }
+                    }
+                  } catch (e) {
+                    print('[DEBUG] ❌ Error checking contacts: $e');
+                  }
+                },
+              ),
+              IconButton(
+                icon: Icon(Icons.refresh, color: Color(0xFF39FF14)),
+                onPressed: () async {
+                  // Manual upgrade trigger
+                  try {
+                    print('[DEBUG] 🔄 Manual upgrade triggered');
+                    await _upgradeUnregisteredContacts();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Contact upgrade completed!')),
+                    );
+                  } catch (e) {
+                    print('[DEBUG] ❌ Error during manual upgrade: $e');
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Upgrade failed: $e')),
+                    );
                   }
                 },
               ),
@@ -1170,6 +1259,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
               child: FloatingActionButton(
                 backgroundColor: Color(0xFF39FF14),
                 child: Icon(Icons.person_add, color: Colors.black, shadows: [Shadow(color: Color(0xFF39FF14), blurRadius: 12)]),
+                // Add this debug version to your FAB handler to track contact creation
                 onPressed: () async {
                   final newContact = await showDialog<_NewContactData>(
                     context: context,
@@ -1178,6 +1268,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   if (newContact != null && newContact.name.trim().isNotEmpty && newContact.phone.trim().isNotEmpty) {
                     final userId = FirebaseService.currentUserId;
                     if (userId != null) {
+                      print('DEBUG: User $userId is adding contact with phone ${newContact.phone}');
+
                       // Search for registered user by phone
                       final usersSnap = await FirebaseFirestore.instance
                           .collection('users')
@@ -1187,16 +1279,22 @@ class _ChatListScreenState extends State<ChatListScreen> {
                         // Registered user found
                         final otherUserDoc = usersSnap.docs.first;
                         final otherUserId = otherUserDoc.id;
+                        print('DEBUG: Found registered user $otherUserId');
+
                         // Prevent adding yourself
                         if (otherUserId == userId) {
+                          print('DEBUG: Prevented user from adding themselves');
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text('You cannot add yourself as a contact')),
                           );
                           return;
                         }
+
                         // Always use deterministic chatId for registered users
                         final participants = [userId, otherUserId]..sort();
                         final deterministicChatId = participants.join('_');
+                        print('DEBUG: Creating chat with ID $deterministicChatId');
+
                         final chatRef = FirebaseFirestore.instance.collection('chats').doc(deterministicChatId);
                         final chatDoc = await chatRef.get();
                         if (!chatDoc.exists) {
@@ -1204,11 +1302,16 @@ class _ChatListScreenState extends State<ChatListScreen> {
                             'participants': participants,
                             'createdAt': FieldValue.serverTimestamp(),
                           });
+                          print('DEBUG: Created new chat');
+                        } else {
+                          print('DEBUG: Chat already exists');
                         }
+
                         // Save contact ONLY for the current user (user who is adding)
+                        print('DEBUG: Adding contact for user $userId only (NOT for $otherUserId)');
                         await FirebaseFirestore.instance
                             .collection('users')
-                            .doc(userId)
+                            .doc(userId)  // ONLY current user
                             .collection('contacts')
                             .doc(otherUserId)
                             .set({
@@ -1219,7 +1322,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           'registered': true,
                           'createdAt': FieldValue.serverTimestamp(),
                         });
+                        print('DEBUG: Contact added successfully for $userId');
+
+                        // DO NOT CREATE RECIPROCAL CONTACT - this would be the bug
+                        // Never do this:
+                        // await FirebaseFirestore.instance.collection('users').doc(otherUserId).collection('contacts')...
+
                       } else {
+                        print('DEBUG: User not registered, adding as unregistered contact');
                         // Not a registered user, save as regular contact
                         final contactId = DateTime.now().millisecondsSinceEpoch.toString();
                         await FirebaseFirestore.instance
@@ -1229,7 +1339,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                             .doc(contactId)
                             .set({
                           'name': newContact.name.trim(),
-                          'avatar': newContact.avatar.trim().isNotEmpty 
+                          'avatar': newContact.avatar.trim().isNotEmpty
                               ? newContact.avatar.trim()
                               : newContact.name.trim()[0].toUpperCase(),
                           'phone': newContact.phone.trim(),
@@ -1237,8 +1347,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           'createdAt': FieldValue.serverTimestamp(),
                         });
                       }
+
                       // Always try to upgrade unregistered contacts after adding
+                      print('DEBUG: Running upgrade function for $userId');
                       await _upgradeUnregisteredContacts();
+                      print('DEBUG: Upgrade function completed for $userId');
                     }
                   }
                 },
