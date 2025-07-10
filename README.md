@@ -333,8 +333,8 @@ in the Software without restriction...
 
 ##  Created By
 
-**[Mohid Faisal]**
--  Email: [your.email@example.com](mailto:your.email@example.com)
+**Mohid Faisal**
+-  Email: [mohidx186@gmail.com](mailto:your.email@example.com)
 -  LinkedIn: [linkedin.com/in/yourprofile](https://linkedin.com/in/yourprofile)
 -  GitHub: [mohid685](https://github.com/mohid685)
 
