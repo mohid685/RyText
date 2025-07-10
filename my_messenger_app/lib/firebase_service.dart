@@ -36,11 +36,9 @@ class FirebaseService {
   
   // Create or update user profile
   static Future<void> createUserProfile(String userId, String name, String avatar, String? email, [String? phone]) async {
-    final safeName = (name.isNotEmpty ? name : 'User');
-    final safeAvatar = (avatar.isNotEmpty ? avatar : (safeName[0].toUpperCase()));
     await _firestore.collection('users').doc(userId).set({
-      'name': safeName,
-      'avatar': safeAvatar,
+      'name': name,
+      'avatar': avatar,
       'email': email,
       'phone': phone,
       'createdAt': FieldValue.serverTimestamp(),
@@ -60,20 +58,15 @@ class FirebaseService {
   
   // Create a new chat
   static Future<String> createChat(String otherUserId) async {
-    final userId = currentUserId;
-    if (userId == null) throw Exception('User not logged in');
-    // Create consistent chat ID by sorting user IDs
-    final participants = [userId, otherUserId]..sort();
-    final chatId = participants.join('_');
-    final chatRef = _firestore.collection('chats').doc(chatId);
-    final existingChat = await chatRef.get();
-    if (!existingChat.exists) {
-      await chatRef.set({
-        'participants': participants,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    }
-    return chatId;
+    final chatData = {
+      'participants': [currentUserId, otherUserId],
+      'lastMessage': '',
+      'lastMessageTime': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+    
+    final docRef = await _firestore.collection('chats').add(chatData);
+    return docRef.id;
   }
   
   // Get user's chats stream
@@ -81,7 +74,7 @@ class FirebaseService {
     return _firestore
         .collection('chats')
         .where('participants', arrayContains: currentUserId)
-        .orderBy('createdAt', descending: true)
+        .orderBy('lastMessageTime', descending: true)
         .snapshots();
   }
   
@@ -92,15 +85,19 @@ class FirebaseService {
   
   // Send message
   static Future<void> sendMessage(String chatId, String text) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    
     final messageData = {
-      'chatId': chatId,
       'senderId': currentUserId,
+      'senderAvatar': user.displayName?.substring(0, 1).toUpperCase() ?? 'U',
       'text': text,
       'timestamp': FieldValue.serverTimestamp(),
+      'isRyAI': false,
     };
     
-    // Add message to messages collection
-    await _firestore.collection('messages').add(messageData);
+    // Add message to chat's messages subcollection
+    await _firestore.collection('chats').doc(chatId).collection('messages').add(messageData);
     
     // Update chat's last message
     await _firestore.collection('chats').doc(chatId).update({
@@ -112,8 +109,9 @@ class FirebaseService {
   // Get messages stream for a chat
   static Stream<QuerySnapshot> getMessagesStream(String chatId) {
     return _firestore
+        .collection('chats')
+        .doc(chatId)
         .collection('messages')
-        .where('chatId', isEqualTo: chatId)
         .orderBy('timestamp', descending: false)
         .snapshots();
   }
@@ -127,13 +125,9 @@ class FirebaseService {
   }
   
   // Save contact for current user
-  static Future<void> addContact(String contactUserId, {String? name, String? avatar}) async {
+  static Future<void> addContact(String contactUserId) async {
     if (currentUserId == null) return;
-    final safeName = (name != null && name.isNotEmpty) ? name : 'User';
-    final safeAvatar = (avatar != null && avatar.isNotEmpty) ? avatar : (safeName[0].toUpperCase());
     await _firestore.collection('users').doc(currentUserId).collection('contacts').doc(contactUserId).set({
-      'name': safeName,
-      'avatar': safeAvatar,
       'addedAt': FieldValue.serverTimestamp(),
     });
   }
